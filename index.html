@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#121212">
+    <meta name="description" content="Offline Camera Tracing Tool for Artists">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>TraceMate</title>
+    <style>
+        :root {
+            --bg-color: #000;
+            --ui-bg: rgba(20, 20, 20, 0.85);
+            --accent: #00E676; /* Green accent */
+            --text: #fff;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* Critical for custom gestures */
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Segoe UI', sans-serif;
+            color: var(--text);
+        }
+
+        /* --- LAYERS --- */
+        
+        /* 1. Camera Feed */
+        #camera-feed {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+        }
+
+        /* 2. Frozen Frame Canvas (Hidden by default) */
+        #freeze-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 2;
+            display: none;
+        }
+
+        /* 3. Grid Overlay */
+        #grid-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+            pointer-events: none;
+            display: none;
+        }
+        
+        .grid-lines {
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr 1fr;
+        }
+        
+        .grid-lines div {
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* 4. Image Overlay Container */
+        #overlay-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 4;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none; /* Passthrough to gestures */
+        }
+
+        #user-image {
+            max-width: 80%;
+            max-height: 80%;
+            opacity: 0.5;
+            transform-origin: center center;
+            will-change: transform;
+            /* Filters for basic image control */
+            filter: brightness(100%) contrast(100%);
+        }
+
+        /* 5. Gesture Receiver Layer */
+        /* This sits on top to catch touches when unlocked */
+        #gesture-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+        }
+
+        /* 6. UI Layer */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; /* Let touches pass through to gesture layer */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* --- UI COMPONENTS --- */
+
+        .toolbar {
+            pointer-events: auto;
+            background: var(--ui-bg);
+            backdrop-filter: blur(5px);
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            transition: opacity 0.3s ease;
+        }
+
+        .top-bar {
+            border-bottom: 1px solid #333;
+            justify-content: space-between;
+            padding: 15px;
+        }
+
+        .bottom-bar {
+            flex-direction: column;
+            padding-bottom: 20px;
+            border-top-top-left-radius: 20px;
+            border-top-top-right-radius: 20px;
+        }
+
+        .controls-row {
+            display: flex;
+            width: 100%;
+            justify-content: space-around;
+            margin-top: 15px;
+        }
+
+        /* Buttons */
+        .btn {
+            background: none;
+            border: none;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 0.75rem;
+            opacity: 0.7;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+
+        .btn svg {
+            width: 28px;
+            height: 28px;
+            margin-bottom: 4px;
+            stroke-width: 2px;
+        }
+
+        .btn.active {
+            opacity: 1;
+            color: var(--accent);
+        }
+        
+        .btn.active svg {
+            stroke: var(--accent);
+        }
+
+        /* Sliders */
+        .slider-container {
+            width: 100%;
+            padding: 0 20px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type=range] {
+            flex-grow: 1;
+            -webkit-appearance: none;
+            background: rgba(255,255,255,0.2);
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            margin-top: -8px; /* Corrects vertical alignment */
+        }
+        
+        input[type=range]::-webkit-slider-runnable-track {
+            height: 4px;
+            color: transparent; /* Hides default track color */
+            border: none;
+        }
+
+        /* Hidden Input */
+        #file-input {
+            display: none;
+        }
+
+        /* Minimal Mode (Hide UI) */
+        .ui-hidden .toolbar {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .toggle-ui-btn {
+            position: absolute;
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%);
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 10px 0 0 10px;
+            pointer-events: auto;
+            z-index: 100;
+        }
+
+        /* Loading Screen */
+        #loader {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #000;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #333;
+            border-top: 4px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Status Toast */
+        #toast {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 20;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Loading -->
+    <div id="loader">
+        <div class="spinner"></div>
+        <p style="margin-top: 15px; color: #888;">Initializing Camera...</p>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast">Notification</div>
+
+    <!-- 1. Live Camera -->
+    <video id="camera-feed" autoplay playsinline muted></video>
+    
+    <!-- 2. Frozen Frame Canvas -->
+    <canvas id="freeze-canvas"></canvas>
+
+    <!-- 3. Grid -->
+    <div id="grid-layer">
+        <div class="grid-lines">
+            <div></div><div></div><div></div>
+            <div></div><div></div><div></div>
+            <div></div><div></div><div></div>
+        </div>
+    </div>
+
+    <!-- 4. Overlay Image -->
+    <div id="overlay-container">
+        <!-- Default placeholder or empty -->
+        <img id="user-image" src="" alt="" style="display:none;">
+    </div>
+
+    <!-- 5. Gesture Layer (Transparent div to catch events) -->
+    <div id="gesture-layer"></div>
+
+    <!-- 6. UI -->
+    <div id="ui-layer">
+        <!-- Top Bar -->
+        <div class="toolbar top-bar">
+            <div style="font-weight: bold; letter-spacing: 1px;">TraceMate</div>
+            <button class="btn" id="btn-hide-ui" onclick="toggleUI()">
+                <!-- Eye Off Icon -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+            </button>
+        </div>
+
+        <!-- Toggle UI Back Button (Usually hidden) -->
+        <div class="toggle-ui-btn" style="display:none;" id="btn-show-ui" onclick="toggleUI()">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </div>
+
+        <!-- Bottom Controls -->
+        <div class="toolbar bottom-bar">
+            <!-- Opacity Slider -->
+            <div class="slider-container">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                <input type="range" id="opacity-slider" min="0" max="100" value="50">
+            </div>
+
+            <div class="controls-row">
+                <!-- Upload -->
+                <button class="btn" onclick="document.getElementById('file-input').click()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    Image
+                </button>
+                <input type="file" id="file-input" accept="image/*">
+
+                <!-- Freeze -->
+                <button class="btn" id="btn-freeze" onclick="toggleFreeze()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                    Freeze
+                </button>
+
+                <!-- Grid -->
+                <button class="btn" id="btn-grid" onclick="toggleGrid()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+                    Grid
+                </button>
+
+                <!-- Lock -->
+                <button class="btn" id="btn-lock" onclick="toggleLock()">
+                    <svg id="icon-unlocked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
+                    <svg id="icon-locked" style="display:none;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    Lock
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- State ---
+        const state = {
+            isFrozen: false,
+            isLocked: false,
+            isGridOn: false,
+            imgScale: 1,
+            imgRotate: 0,
+            imgX: 0,
+            imgY: 0,
+            hasImage: false
+        };
+
+        // --- Elements ---
+        const video = document.getElementById('camera-feed');
+        const freezeCanvas = document.getElementById('freeze-canvas');
+        const userImage = document.getElementById('user-image');
+        const gestureLayer = document.getElementById('gesture-layer');
+        const loader = document.getElementById('loader');
+        const fileInput = document.getElementById('file-input');
+        const opacitySlider = document.getElementById('opacity-slider');
+        const toast = document.getElementById('toast');
+
+        // --- Initialization ---
+        async function initCamera() {
+            try {
+                // Try to get rear camera
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    loader.style.display = 'none';
+                    showToast("Camera Ready");
+                };
+            } catch (err) {
+                console.error(err);
+                loader.innerHTML = `<p style="color:white; text-align:center; padding:20px;">Camera Access Denied or Unavailable.<br>Check permissions.</p>`;
+            }
+        }
+
+        // --- Image Handling ---
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    userImage.src = event.target.result;
+                    userImage.style.display = 'block';
+                    state.hasImage = true;
+                    resetImageTransform();
+                    showToast("Image Loaded");
+                }
+                reader.readAsDataURL(e.target.files[0]);
+            }
+        });
+
+        opacitySlider.addEventListener('input', (e) => {
+            userImage.style.opacity = e.target.value / 100;
+        });
+
+        function resetImageTransform() {
+            state.imgScale = 1;
+            state.imgRotate = 0;
+            state.imgX = 0;
+            state.imgY = 0;
+            updateTransform();
+        }
+
+        // --- Tools Logic ---
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.style.opacity = 1;
+            setTimeout(() => toast.style.opacity = 0, 2000);
+        }
+
+        function toggleUI() {
+            const ui = document.getElementById('ui-layer');
+            const showBtn = document.getElementById('btn-show-ui');
+            if (ui.classList.contains('ui-hidden')) {
+                ui.classList.remove('ui-hidden');
+                showBtn.style.display = 'none';
+            } else {
+                ui.classList.add('ui-hidden');
+                showBtn.style.display = 'block';
+                showToast("UI Hidden");
+            }
+        }
+
+        function toggleGrid() {
+            state.isGridOn = !state.isGridOn;
+            const grid = document.getElementById('grid-layer');
+            const btn = document.getElementById('btn-grid');
+            
+            if (state.isGridOn) {
+                grid.style.display = 'block';
+                btn.classList.add('active');
+            } else {
+                grid.style.display = 'none';
+                btn.classList.remove('active');
+            }
+        }
+
+        function toggleLock() {
+            state.isLocked = !state.isLocked;
+            const btn = document.getElementById('btn-lock');
+            const lockedIcon = document.getElementById('icon-locked');
+            const unlockedIcon = document.getElementById('icon-unlocked');
+            
+            if (state.isLocked) {
+                btn.classList.add('active');
+                lockedIcon.style.display = 'block';
+                unlockedIcon.style.display = 'none';
+                gestureLayer.style.pointerEvents = 'none'; // Pass through to nothing
+                showToast("Image Locked");
+            } else {
+                btn.classList.remove('active');
+                lockedIcon.style.display = 'none';
+                unlockedIcon.style.display = 'block';
+                gestureLayer.style.pointerEvents = 'auto'; // Catch gestures
+                showToast("Image Unlocked");
+            }
+        }
+
+        function toggleFreeze() {
+            state.isFrozen = !state.isFrozen;
+            const btn = document.getElementById('btn-freeze');
+            
+            if (state.isFrozen) {
+                // Capture current frame to canvas
+                freezeCanvas.width = video.videoWidth;
+                freezeCanvas.height = video.videoHeight;
+                const ctx = freezeCanvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, freezeCanvas.width, freezeCanvas.height);
+                freezeCanvas.style.display = 'block';
+                video.pause(); // Save battery
+                btn.classList.add('active');
+                showToast("Camera Frozen");
+            } else {
+                freezeCanvas.style.display = 'none';
+                video.play();
+                btn.classList.remove('active');
+                showToast("Camera Live");
+            }
+        }
+
+        // --- Gesture Engine (Multi-touch) ---
+        
+        let initialDist = 0;
+        let initialAngle = 0;
+        let initialScale = 1;
+        let initialRotate = 0;
+        let startX = 0, startY = 0;
+        let initialImgX = 0, initialImgY = 0;
+
+        function getDistance(touches) {
+            return Math.hypot(
+                touches[0].clientX - touches[1].clientX,
+                touches[0].clientY - touches[1].clientY
+            );
+        }
+
+        function getAngle(touches) {
+            return Math.atan2(
+                touches[1].clientY - touches[0].clientY,
+                touches[1].clientX - touches[0].clientX
+            ) * 180 / Math.PI;
+        }
+
+        function updateTransform() {
+            if (!state.hasImage) return;
+            userImage.style.transform = `translate(${state.imgX}px, ${state.imgY}px) rotate(${state.imgRotate}deg) scale(${state.imgScale})`;
+        }
+
+        gestureLayer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                // Pan Start
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                initialImgX = state.imgX;
+                initialImgY = state.imgY;
+            } else if (e.touches.length === 2) {
+                // Pinch/Rotate Start
+                initialDist = getDistance(e.touches);
+                initialAngle = getAngle(e.touches);
+                initialScale = state.imgScale;
+                initialRotate = state.imgRotate;
+            }
+        });
+
+        gestureLayer.addEventListener('touchmove', (e) => {
+            e.preventDefault(); // Prevent scrolling
+
+            if (e.touches.length === 1) {
+                // Pan
+                const dx = e.touches[0].clientX - startX;
+                const dy = e.touches[0].clientY - startY;
+                state.imgX = initialImgX + dx;
+                state.imgY = initialImgY + dy;
+            } else if (e.touches.length === 2) {
+                // Pinch & Rotate
+                const currentDist = getDistance(e.touches);
+                const currentAngle = getAngle(e.touches);
+
+                const scaleFactor = currentDist / initialDist;
+                state.imgScale = initialScale * scaleFactor;
+                
+                const angleDiff = currentAngle - initialAngle;
+                state.imgRotate = initialRotate + angleDiff;
+            }
+            requestAnimationFrame(updateTransform);
+        });
+
+        // --- Service Worker Registration (PWA) ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW Registered'))
+                    .catch(err => console.log('SW Error:', err));
+            });
+        }
+
+        // Start
+        window.onload = initCamera;
+
+    </script>
+</body>
+</html>

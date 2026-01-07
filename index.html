@@ -7,16 +7,15 @@
     <meta name="description" content="Pro AR Tracing Tool for Artists">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>TraceMate Pro</title>
-    <!-- Phosphor Icons -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <style>
         :root {
             --bg-color: #000;
-            --glass-bg: rgba(20, 20, 20, 0.75);
+            --glass-bg: rgba(20, 20, 20, 0.85);
             --glass-border: rgba(255, 255, 255, 0.15);
             --accent: #00E676;
             --danger: #FF5252;
             --record: #FF4081;
+            --track: #2979FF; /* Blue for Tracking */
             --text: #fff;
             --text-mute: #aaa;
         }
@@ -61,6 +60,16 @@
         
         #gesture-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; }
 
+        /* TRACKER BOX UI */
+        #tracker-box {
+            position: absolute; width: 40px; height: 40px;
+            border: 2px solid var(--track);
+            box-shadow: 0 0 10px var(--track);
+            z-index: 6; display: none; pointer-events: none;
+            transform: translate(-50%, -50%);
+        }
+        #tracker-box::after { content:'TRACKING'; position:absolute; top:-20px; left:50%; transform:translateX(-50%); font-size:10px; background:var(--track); padding:2px 4px; border-radius:4px; font-weight:bold; }
+
         /* UI LAYER */
         #ui-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -75,7 +84,6 @@
         }
         .app-title { font-weight: 600; letter-spacing: 1px; font-size: 1.1rem; opacity: 0.9; }
 
-        /* Recording Indicator */
         #rec-indicator {
             display: flex; align-items: center; gap: 6px;
             background: rgba(255, 64, 129, 0.2); border: 1px solid var(--record);
@@ -101,21 +109,25 @@
         .tools-scroll::-webkit-scrollbar { display: none; }
 
         .btn-round {
-            background: rgba(255,255,255,0.1); width: 42px; height: 42px;
+            background: rgba(255,255,255,0.1); width: 44px; height: 44px;
             border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            border: none; color: #fff; font-size: 1.3rem; cursor: pointer; transition: all 0.2s;
-            flex-shrink: 0;
+            border: none; color: #fff; cursor: pointer; transition: all 0.2s;
+            flex-shrink: 0; padding: 10px;
         }
+        .btn-round svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
         .btn-round:active { transform: scale(0.9); }
         .btn-round.active { background: var(--accent); color: #000; box-shadow: 0 0 15px rgba(0, 230, 118, 0.4); }
+        .btn-round.active svg { stroke: #000; }
         .btn-round.danger { color: var(--danger); }
         .btn-round.warning { background: #FFD700; color: #000; }
+        .btn-round.track { color: var(--track); }
+        .btn-round.track.active { background: var(--track); color: white; box-shadow: 0 0 15px rgba(41, 121, 255, 0.4); }
+        .btn-round.track.active svg { stroke: #fff; }
         .btn-round.record-btn.active { background: var(--record); color: white; box-shadow: 0 0 15px rgba(255, 64, 129, 0.4); }
 
         .tool-item { display: flex; flex-direction: column; align-items: center; min-width: 60px; gap: 5px; }
         .tool-label { font-size: 0.7rem; color: var(--text-mute); }
 
-        /* SLIDER */
         .slider-wrapper { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; padding: 0 10px; }
         input[type=range] {
             flex: 1; -webkit-appearance: none; background: rgba(255,255,255,0.15);
@@ -139,9 +151,10 @@
         }
         .nudge-btn {
             width: 45px; height: 45px; background: rgba(255,255,255,0.1);
-            border: none; border-radius: 10px; color: white; font-size: 1.2rem;
+            border: none; border-radius: 10px; color: white;
             display: flex; align-items: center; justify-content: center;
         }
+        .nudge-btn svg { width: 24px; height: 24px; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill:none; }
         .nudge-btn:active { background: var(--accent); color: black; }
 
         /* TOAST & INDICATORS */
@@ -164,6 +177,12 @@
             border-radius: 15px; font-size: 0.8rem; font-weight: bold;
             display: none; z-index: 9; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
         }
+        #track-indicator {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            background: var(--track); color: white; padding: 5px 15px;
+            border-radius: 15px; font-size: 0.8rem; font-weight: bold;
+            display: none; z-index: 9; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
 
         #file-input { display: none; }
         #loader {
@@ -174,18 +193,20 @@
         
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
         @keyframes spin { 100% { transform: rotate(360deg); } }
+        .spinner { width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
     </style>
 </head>
 <body>
 
     <div id="loader">
-        <i class="ph ph-spinner-gap" style="font-size: 3rem; color: var(--accent); animation: spin 1s linear infinite;"></i>
+        <div class="spinner"></div>
         <p style="margin-top:20px; color:#666; font-size: 0.9rem;">Starting Studio...</p>
     </div>
 
     <div id="toast">Message</div>
-    <div id="lock-indicator"><i class="ph ph-lock-key"></i> LOCKED</div>
-    <div id="blink-indicator"><i class="ph ph-eye"></i> BLINK MODE</div>
+    <div id="lock-indicator">LOCKED</div>
+    <div id="blink-indicator">BLINK MODE</div>
+    <div id="track-indicator">TAP TO LOCK ANCHOR</div>
 
     <video id="camera-feed" autoplay playsinline muted></video>
     <canvas id="freeze-canvas"></canvas>
@@ -197,22 +218,25 @@
     <div id="overlay-container">
         <img id="user-image" src="" alt="" style="display:none;">
     </div>
+    
+    <div id="tracker-box"></div>
 
     <div id="gesture-layer"></div>
 
-    <!-- Hidden Canvas for Recorder -->
+    <!-- Hidden Canvases -->
     <canvas id="rec-canvas" style="display:none;"></canvas>
+    <canvas id="track-compute-canvas" width="200" height="200" style="display:none;"></canvas>
 
     <!-- NUDGE CONTROLS -->
     <div id="nudge-controls">
         <div></div>
-        <button class="nudge-btn" onclick="nudge(0, -1)"><i class="ph ph-caret-up"></i></button>
+        <button class="nudge-btn" onclick="nudge(0, -1)"><svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg></button>
         <div></div>
-        <button class="nudge-btn" onclick="nudge(-1, 0)"><i class="ph ph-caret-left"></i></button>
+        <button class="nudge-btn" onclick="nudge(-1, 0)"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
         <div style="display:flex; align-items:center; justify-content:center; color:#888; font-size:0.7rem;">1px</div>
-        <button class="nudge-btn" onclick="nudge(1, 0)"><i class="ph ph-caret-right"></i></button>
+        <button class="nudge-btn" onclick="nudge(1, 0)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
         <div></div>
-        <button class="nudge-btn" onclick="nudge(0, 1)"><i class="ph ph-caret-down"></i></button>
+        <button class="nudge-btn" onclick="nudge(0, 1)"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
         <div></div>
     </div>
 
@@ -222,18 +246,18 @@
                 <div class="app-title">TraceMate <span style="color:var(--accent); font-size:0.8em;">PRO</span></div>
                 <div id="rec-indicator"><div class="rec-dot"></div> REC</div>
             </div>
-            <button class="btn-round" onclick="toggleUI()" style="width:36px; height:36px; background:transparent;">
-                <i class="ph ph-eye-slash"></i>
+            <button class="btn-round" onclick="toggleUI()" style="width:36px; height:36px; background:transparent; padding:0;">
+                <svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
             </button>
         </div>
 
         <button id="restore-ui-btn" onclick="toggleUI()" class="btn-round" style="position:absolute; top:20px; right:20px; z-index:100; display:none; background:rgba(0,0,0,0.5);">
-            <i class="ph ph-eye"></i>
+            <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
         </button>
 
         <div class="bottom-sheet">
             <div class="slider-wrapper">
-                <i class="ph ph-drop-half-bottom" style="font-size: 1.2rem; opacity: 0.7;"></i>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.7"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
                 <input type="range" id="opacity-slider" min="0" max="100" value="50">
             </div>
 
@@ -242,7 +266,7 @@
                 <!-- 1. Image -->
                 <div class="tool-item">
                     <button class="btn-round" onclick="document.getElementById('file-input').click()">
-                        <i class="ph ph-image"></i>
+                        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                     </button>
                     <span class="tool-label">Load</span>
                 </div>
@@ -250,81 +274,73 @@
                 <!-- 2. Lock -->
                 <div class="tool-item">
                     <button class="btn-round" id="btn-lock" onclick="toggleLock()">
-                        <i class="ph ph-lock-open"></i>
+                        <svg id="icon-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
                     </button>
                     <span class="tool-label">Lock</span>
                 </div>
+                
+                <!-- 3. Smart Anchor (NEW) -->
+                <div class="tool-item">
+                    <button class="btn-round track" id="btn-track" onclick="toggleTrackingSetup()">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
+                    </button>
+                    <span class="tool-label">Anchor</span>
+                </div>
 
-                <!-- 3. Blend (NEW) -->
+                <!-- 4. Blend -->
                 <div class="tool-item">
                     <button class="btn-round" id="btn-blend" onclick="toggleBlend()">
-                        <i class="ph ph-drop"></i>
+                        <svg viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
                     </button>
                     <span class="tool-label">Blend</span>
                 </div>
 
-                <!-- 4. Nudge -->
+                <!-- 5. Nudge -->
                 <div class="tool-item">
                     <button class="btn-round" id="btn-nudge" onclick="toggleNudge()">
-                        <i class="ph ph-game-controller"></i>
+                        <svg viewBox="0 0 24 24"><path d="M6 11H9V8H11V11H14V13H11V16H9V13H6V11Z" fill="currentColor"/><circle cx="17.5" cy="10.5" r="1.5" fill="currentColor"/><circle cx="17.5" cy="13.5" r="1.5" fill="currentColor"/></svg>
                     </button>
                     <span class="tool-label">Adjust</span>
                 </div>
 
-                <!-- 5. Value Scout (NEW) -->
+                <!-- 6. Value Scout -->
                 <div class="tool-item">
                     <button class="btn-round" id="btn-value" onclick="toggleValueScout()">
-                        <i class="ph ph-aperture"></i>
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
                     </button>
                     <span class="tool-label">Values</span>
                 </div>
 
-                <!-- 6. Recorder (NEW) -->
+                <!-- 7. Recorder -->
                 <div class="tool-item">
                     <button class="btn-round record-btn" id="btn-rec" onclick="toggleRecord()">
-                        <i class="ph ph-video-camera"></i>
+                        <svg viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
                     </button>
                     <span class="tool-label">Rec</span>
                 </div>
 
-                <!-- 7. Blink -->
+                <!-- 8. Blink -->
                 <div class="tool-item">
                     <button class="btn-round warning" id="btn-blink" onclick="toggleBlink()">
-                        <i class="ph ph-eye-closed"></i>
+                        <svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
                     </button>
                     <span class="tool-label">Blink</span>
                 </div>
 
-                <!-- 8. Torch -->
+                <!-- 9. Torch -->
                 <div class="tool-item">
                     <button class="btn-round" id="btn-torch" onclick="toggleTorch()">
-                        <i class="ph ph-flashlight"></i>
+                        <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
                     </button>
                     <span class="tool-label">Torch</span>
-                </div>
-
-                <!-- 9. Filters -->
-                 <div class="tool-item">
-                    <button class="btn-round" id="btn-filter" onclick="cycleFilters()">
-                        <i class="ph ph-magic-wand"></i>
-                    </button>
-                    <span class="tool-label" id="filter-label">Normal</span>
                 </div>
 
                 <!-- 10. Flip -->
                 <div class="tool-item">
                     <button class="btn-round" id="btn-flip" onclick="toggleFlip()">
-                        <i class="ph ph-arrows-left-right"></i>
+                        <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
                     </button>
                     <span class="tool-label">Flip</span>
-                </div>
-
-                <!-- 11. Grid -->
-                <div class="tool-item">
-                    <button class="btn-round" id="btn-grid" onclick="toggleGrid()">
-                        <i class="ph ph-grid-four"></i>
-                    </button>
-                    <span class="tool-label">Grid</span>
                 </div>
 
             </div>
@@ -346,17 +362,21 @@
             isBlendMode: false,
             isValueScout: false,
             isRecording: false,
+            isTrackingSetup: false,
+            isTracking: false,
             filterMode: 0, 
-            imgScale: 1,
-            imgRotate: 0,
-            imgX: 0,
-            imgY: 0,
+            imgScale: 1, imgRotate: 0, imgX: 0, imgY: 0,
             hasImage: false,
             track: null,
             opacity: 0.5,
             blinkInterval: null,
             mediaRecorder: null,
-            recordedChunks: []
+            recordedChunks: [],
+            // Tracker State
+            trackerX: 0, trackerY: 0, // Video Coords
+            templateData: null,
+            trackBoxSize: 32, // Size of template
+            searchWindow: 20 // How far to look (pixels)
         };
 
         const FILTERS = [
@@ -372,30 +392,189 @@
         const gestureLayer = document.getElementById('gesture-layer');
         const lockIndicator = document.getElementById('lock-indicator');
         const blinkIndicator = document.getElementById('blink-indicator');
+        const trackIndicator = document.getElementById('track-indicator');
+        const trackerBox = document.getElementById('tracker-box');
         const toast = document.getElementById('toast');
         const freezeCanvas = document.getElementById('freeze-canvas');
         const fileInput = document.getElementById('file-input');
         const nudgeControls = document.getElementById('nudge-controls');
         const opacitySlider = document.getElementById('opacity-slider');
         const recIndicator = document.getElementById('rec-indicator');
+        const trackComputeCanvas = document.getElementById('track-compute-canvas');
+        const trackCtx = trackComputeCanvas.getContext('2d', { willReadFrequently: true });
 
-        // --- INIT & PERSISTENCE ---
+        // --- INIT ---
         async function initCamera() {
-            loadState(); // Auto-load
+            // Unregister old SW
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(r => r.forEach(reg => reg.unregister()));
+            }
+
+            loadState(); 
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
+                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
                 });
                 video.srcObject = stream;
                 state.track = stream.getVideoTracks()[0];
                 video.onloadedmetadata = () => {
                     document.getElementById('loader').style.display = 'none';
                     if(!state.hasImage) showToast("Ready to Create");
+                    requestAnimationFrame(trackingLoop);
                 };
             } catch (err) {
                 console.error(err);
                 document.getElementById('loader').innerHTML = `<p style="color:#fff;">Camera Error<br>${err.name}</p>`;
             }
+        }
+
+        // --- TRACKING LOGIC (Optical Flow) ---
+        
+        function toggleTrackingSetup() {
+            state.isTrackingSetup = !state.isTrackingSetup;
+            if (state.isTrackingSetup) {
+                state.isTracking = false; // Stop if currently tracking
+                trackIndicator.textContent = "TAP MARK TO LOCK";
+                trackIndicator.style.display = 'block';
+                showToast("Tap a distinct mark on paper");
+                gestureLayer.style.zIndex = 20; // Bring to front to catch tap
+                document.getElementById('btn-track').classList.add('active');
+            } else {
+                trackIndicator.style.display = 'none';
+                gestureLayer.style.zIndex = 5;
+                document.getElementById('btn-track').classList.remove('active');
+                state.isTracking = false;
+                trackerBox.style.display = 'none';
+            }
+        }
+
+        function startTracking(screenX, screenY) {
+            // Convert Screen to Video Coords
+            const rect = video.getBoundingClientRect();
+            // Simple mapping for object-fit: cover logic is complex, 
+            // We use a simplified center-crop assumption for the hidden canvas
+            // But to make this robust for a single file, we will draw the CURRENT video frame to hidden canvas
+            // and crop from there based on relative coordinates.
+            
+            trackComputeCanvas.width = 300; // Work on low res for speed
+            trackComputeCanvas.height = 300 * (video.videoHeight / video.videoWidth);
+            
+            // Map click
+            const scaleX = trackComputeCanvas.width / rect.width;
+            const scaleY = trackComputeCanvas.height / rect.height;
+            
+            state.trackerX = (screenX - rect.left) * scaleX;
+            state.trackerY = (screenY - rect.top) * scaleY;
+            
+            // Draw current frame
+            trackCtx.drawImage(video, 0, 0, trackComputeCanvas.width, trackComputeCanvas.height);
+            
+            // Capture Template (32x32 area)
+            const size = state.trackBoxSize;
+            state.templateData = trackCtx.getImageData(state.trackerX - size/2, state.trackerY - size/2, size, size);
+            
+            state.isTracking = true;
+            state.isTrackingSetup = false;
+            
+            trackIndicator.textContent = "ANCHOR LOCKED";
+            trackIndicator.style.backgroundColor = "#2979FF";
+            
+            trackerBox.style.display = 'block';
+            trackerBox.style.left = screenX + 'px';
+            trackerBox.style.top = screenY + 'px';
+            
+            showToast("Tracking Started");
+            gestureLayer.style.zIndex = 5; // Reset layer
+        }
+
+        function trackingLoop() {
+            if (state.isTracking && video.readyState === 4) {
+                // 1. Draw current video frame to small compute canvas
+                trackCtx.drawImage(video, 0, 0, trackComputeCanvas.width, trackComputeCanvas.height);
+                
+                // 2. Search Window (Last Pos +/- SearchWindow)
+                const tX = state.trackerX;
+                const tY = state.trackerY;
+                const win = state.searchWindow; 
+                const size = state.trackBoxSize;
+                
+                // Get Search Area Data
+                // We grab a larger chunk around the tracker
+                const searchData = trackCtx.getImageData(tX - size/2 - win, tY - size/2 - win, size + (win*2), size + (win*2));
+                
+                // 3. Simple Template Matching (SAD - Sum of Absolute Differences)
+                // Finds best match in searchData for templateData
+                let bestX = 0, bestY = 0, minDiff = Infinity;
+                
+                const wSearch = searchData.width;
+                const wTemp = size;
+                const hTemp = size;
+                
+                // Iterate over possible positions in search window
+                for (let y = 0; y <= win*2; y+=2) { // Step 2 for speed
+                    for (let x = 0; x <= win*2; x+=2) {
+                        
+                        let diff = 0;
+                        // Compare pixels
+                        // Sample only every 4th pixel for speed
+                        for (let py = 0; py < hTemp; py+=4) {
+                            for (let px = 0; px < wTemp; px+=4) {
+                                const searchIdx = ((y + py) * wSearch + (x + px)) * 4;
+                                const tempIdx = (py * wTemp + px) * 4;
+                                
+                                // Grayscale diff
+                                const lum1 = searchData.data[searchIdx] * 0.3 + searchData.data[searchIdx+1] * 0.59;
+                                const lum2 = state.templateData.data[tempIdx] * 0.3 + state.templateData.data[tempIdx+1] * 0.59;
+                                diff += Math.abs(lum1 - lum2);
+                            }
+                        }
+                        
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestX = x;
+                            bestY = y;
+                        }
+                    }
+                }
+                
+                // 4. Update Position if confident
+                if (minDiff < 50000) { // Threshold
+                    const moveX = bestX - win;
+                    const moveY = bestY - win;
+                    
+                    state.trackerX += moveX;
+                    state.trackerY += moveY;
+                    
+                    // Move Overlay (Inverse of camera movement)
+                    // If camera moves Right, Overlay must move Left to stay pinned
+                    // BUT here we track paper feature. If feature moves Right on screen, Overlay must move Right.
+                    
+                    // Convert low-res tracking delta back to high-res screen delta
+                    const rect = video.getBoundingClientRect();
+                    const scaleX = rect.width / trackComputeCanvas.width;
+                    
+                    if (Math.abs(moveX) > 0 || Math.abs(moveY) > 0) {
+                        state.imgX += moveX * scaleX;
+                        state.imgY += moveY * scaleX;
+                        updateTransform();
+                        
+                        // Update visual box
+                        const boxX = state.trackerX * scaleX + rect.left;
+                        const boxY = state.trackerY * (rect.height / trackComputeCanvas.height) + rect.top;
+                        trackerBox.style.left = boxX + 'px';
+                        trackerBox.style.top = boxY + 'px';
+                    }
+                }
+            }
+            requestAnimationFrame(trackingLoop);
+        }
+
+
+        // --- BASIC FUNCTIONS ---
+
+        function showToast(msg) {
+            toast.textContent = msg; toast.style.opacity = 1;
+            setTimeout(() => toast.style.opacity = 0, 2500);
         }
 
         // Auto-Save
@@ -405,16 +584,13 @@
                 imgScale: state.imgScale, imgRotate: state.imgRotate,
                 isFlipped: state.isFlipped, opacity: state.opacity,
                 filterMode: state.filterMode, isBlendMode: state.isBlendMode,
-                isValueScout: state.isValueScout,
                 imageData: state.hasImage ? userImage.src : null
             };
-            try {
-                localStorage.setItem('tracemate_save', JSON.stringify(data));
-            } catch(e) { console.log("Save failed (image likely too big)"); }
+            try { localStorage.setItem('tracemate_save_v2', JSON.stringify(data)); } catch(e) {}
         }
 
         function loadState() {
-            const saved = localStorage.getItem('tracemate_save');
+            const saved = localStorage.getItem('tracemate_save_v2');
             if(saved) {
                 try {
                     const data = JSON.parse(saved);
@@ -424,9 +600,7 @@
                     state.opacity = data.opacity || 0.5;
                     state.filterMode = data.filterMode || 0;
                     state.isBlendMode = data.isBlendMode || false;
-                    state.isValueScout = data.isValueScout || false;
                     
-                    // Apply loaded state
                     opacitySlider.value = state.opacity * 100;
                     userImage.style.opacity = state.opacity;
                     if(data.imageData) {
@@ -434,41 +608,18 @@
                         userImage.style.display = 'block';
                         state.hasImage = true;
                     }
-                    
                     if(state.isBlendMode) {
                         userImage.classList.add('blend-multiply');
                         document.getElementById('btn-blend').classList.add('active');
                     }
-                    if(state.isValueScout) {
-                        video.classList.add('value-scout-active');
-                        document.getElementById('btn-value').classList.add('active');
-                    }
                     if(state.isFlipped) document.getElementById('btn-flip').classList.add('active');
-                    
                     updateTransform();
-                    // Apply filter
-                    const cur = FILTERS[state.filterMode];
-                    userImage.style.filter = cur.val;
-                    document.getElementById('filter-label').innerText = cur.name;
-                    document.getElementById('btn-filter').classList.toggle('active', state.filterMode > 0);
-
-                } catch(e) { console.error("Load failed", e); }
+                } catch(e) {}
             }
         }
-
-        // Debounced Save
+        
         let saveTimeout;
-        function triggerSave() {
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(saveState, 1000);
-        }
-
-        // --- CORE TOOLS ---
-
-        function showToast(msg) {
-            toast.textContent = msg; toast.style.opacity = 1;
-            setTimeout(() => toast.style.opacity = 0, 2500);
-        }
+        function triggerSave() { clearTimeout(saveTimeout); saveTimeout = setTimeout(saveState, 1000); }
 
         fileInput.addEventListener('change', (e) => {
             if (e.target.files && e.target.files[0]) {
@@ -477,11 +628,8 @@
                     userImage.src = event.target.result;
                     userImage.style.display = 'block';
                     state.hasImage = true;
-                    // Reset to center but keep scale 1
                     state.imgX = 0; state.imgY = 0; state.imgScale = 1; state.imgRotate = 0;
-                    updateTransform();
-                    triggerSave();
-                    showToast("Image Loaded");
+                    updateTransform(); triggerSave();
                 }
                 reader.readAsDataURL(e.target.files[0]);
             }
@@ -493,86 +641,49 @@
             triggerSave();
         });
 
-        // 1. BLEND MODE (Multiply)
         function toggleBlend() {
             state.isBlendMode = !state.isBlendMode;
-            const btn = document.getElementById('btn-blend');
-            if (state.isBlendMode) {
-                userImage.classList.add('blend-multiply');
-                btn.classList.add('active');
-                showToast("Blend: Multiply (Whites Transparent)");
-            } else {
-                userImage.classList.remove('blend-multiply');
-                btn.classList.remove('active');
-                showToast("Blend: Normal");
-            }
+            document.getElementById('btn-blend').classList.toggle('active');
+            userImage.classList.toggle('blend-multiply');
+            showToast(state.isBlendMode ? "Blend: Multiply" : "Blend: Normal");
             triggerSave();
         }
 
-        // 2. VALUE SCOUT
         function toggleValueScout() {
             state.isValueScout = !state.isValueScout;
-            const btn = document.getElementById('btn-value');
-            if(state.isValueScout) {
-                video.classList.add('value-scout-active');
-                btn.classList.add('active');
-                showToast("Value Check: ON");
-            } else {
-                video.classList.remove('value-scout-active');
-                btn.classList.remove('active');
-                showToast("Value Check: OFF");
-            }
-            triggerSave();
+            document.getElementById('btn-value').classList.toggle('active');
+            video.classList.toggle('value-scout-active');
+            showToast(state.isValueScout ? "Value: ON" : "Value: OFF");
         }
 
-        // 3. RECORDER
         function toggleRecord() {
-            if(state.isRecording) {
-                stopRecording();
-            } else {
-                startRecording();
-            }
+            if(state.isRecording) stopRecording(); else startRecording();
         }
 
         function startRecording() {
             try {
                 const recCanvas = document.getElementById('rec-canvas');
                 const ctx = recCanvas.getContext('2d');
-                recCanvas.width = video.videoWidth; 
-                recCanvas.height = video.videoHeight;
-                
-                const stream = recCanvas.captureStream(30); // 30 FPS
+                recCanvas.width = video.videoWidth; recCanvas.height = video.videoHeight;
+                const stream = recCanvas.captureStream(30);
                 state.mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
                 state.recordedChunks = [];
-                
-                state.mediaRecorder.ondataavailable = (e) => {
-                    if (e.data.size > 0) state.recordedChunks.push(e.data);
-                };
-                
+                state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.recordedChunks.push(e.data); };
                 state.mediaRecorder.onstop = () => {
                     const blob = new Blob(state.recordedChunks, { type: 'video/webm' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `TraceMate_Session_${new Date().getTime()}.webm`;
-                    document.body.appendChild(a);
-                    a.click();
+                    a.href = url; a.download = `TraceMate_${Date.now()}.webm`;
+                    document.body.appendChild(a); a.click();
                     showToast("Video Saved!");
                 };
-
                 state.mediaRecorder.start();
                 state.isRecording = true;
-                
                 document.getElementById('btn-rec').classList.add('active');
                 recIndicator.style.display = 'flex';
-                showToast("Recording Started...");
-                
-                // Start Render Loop
+                showToast("Recording...");
                 requestAnimationFrame(recordLoop);
-            } catch(e) {
-                showToast("Recording not supported");
-                console.error(e);
-            }
+            } catch(e) { showToast("Rec Not Supported"); }
         }
 
         function stopRecording() {
@@ -584,71 +695,43 @@
 
         function recordLoop() {
             if(!state.isRecording) return;
-            
             const recCanvas = document.getElementById('rec-canvas');
             const ctx = recCanvas.getContext('2d');
-            
-            // Draw Video Only (With Filter if Value Scout is on)
             ctx.filter = state.isValueScout ? "grayscale(100%) contrast(120%)" : "none";
             ctx.drawImage(video, 0, 0, recCanvas.width, recCanvas.height);
             ctx.filter = "none";
-            
-            // NOTE: Image Overlay drawing code removed to record only raw camera feed.
-            
             requestAnimationFrame(recordLoop);
         }
 
-        // --- OTHER TOOLS ---
-
         function toggleUI() {
             const ui = document.getElementById('ui-layer');
-            const restoreBtn = document.getElementById('restore-ui-btn');
-            if (ui.style.opacity === '0') {
-                ui.style.opacity = '1'; ui.style.pointerEvents = 'none';
-                document.querySelector('.top-bar').style.pointerEvents = 'auto';
-                document.querySelector('.bottom-sheet').style.pointerEvents = 'auto';
-                if(state.isNudgeOpen) nudgeControls.style.pointerEvents = 'auto';
-                restoreBtn.style.display = 'none';
-            } else {
-                ui.style.opacity = '0'; ui.style.pointerEvents = 'none';
-                nudgeControls.style.pointerEvents = 'none';
-                restoreBtn.style.display = 'block';
-                showToast("UI Hidden");
-            }
+            const restore = document.getElementById('restore-ui-btn');
+            const hidden = ui.style.opacity === '0';
+            ui.style.opacity = hidden ? '1' : '0';
+            ui.style.pointerEvents = hidden ? 'none' : 'none'; // logic handled by children
+            document.querySelector('.top-bar').style.pointerEvents = hidden ? 'auto' : 'none';
+            document.querySelector('.bottom-sheet').style.pointerEvents = hidden ? 'auto' : 'none';
+            restore.style.display = hidden ? 'none' : 'block';
         }
 
         function toggleLock() {
             state.isLocked = !state.isLocked;
-            const btn = document.getElementById('btn-lock');
-            if (state.isLocked) {
-                btn.classList.add('danger');
-                btn.querySelector('i').className = 'ph ph-lock-key';
-                lockIndicator.style.display = 'block';
-                gestureLayer.style.pointerEvents = 'none';
-                showToast("Locked");
-            } else {
-                btn.classList.remove('danger');
-                btn.querySelector('i').className = 'ph ph-lock-open';
-                lockIndicator.style.display = 'none';
-                gestureLayer.style.pointerEvents = 'auto';
-                showToast("Unlocked");
-            }
+            document.getElementById('btn-lock').classList.toggle('danger');
+            lockIndicator.style.display = state.isLocked ? 'block' : 'none';
+            gestureLayer.style.pointerEvents = state.isLocked ? 'none' : 'auto';
+            showToast(state.isLocked ? "Locked" : "Unlocked");
         }
 
         function toggleBlink() {
             state.isBlinking = !state.isBlinking;
-            const btn = document.getElementById('btn-blink');
+            document.getElementById('btn-blink').classList.toggle('active');
+            blinkIndicator.style.display = state.isBlinking ? 'block' : 'none';
             if (state.isBlinking) {
-                btn.classList.add('active');
-                blinkIndicator.style.display = 'block';
                 let on = true;
                 state.blinkInterval = setInterval(() => {
-                    userImage.style.opacity = on ? state.opacity : 0;
-                    on = !on;
+                    userImage.style.opacity = on ? state.opacity : 0; on = !on;
                 }, 400);
             } else {
-                btn.classList.remove('active');
-                blinkIndicator.style.display = 'none';
                 clearInterval(state.blinkInterval);
                 userImage.style.opacity = state.opacity;
             }
@@ -656,16 +739,9 @@
 
         function toggleNudge() {
             state.isNudgeOpen = !state.isNudgeOpen;
-            const btn = document.getElementById('btn-nudge');
-            if (state.isNudgeOpen) {
-                nudgeControls.style.display = 'grid';
-                btn.classList.add('active');
-                if(!state.isLocked) toggleLock(); 
-                showToast("Fine Tune Controls");
-            } else {
-                nudgeControls.style.display = 'none';
-                btn.classList.remove('active');
-            }
+            document.getElementById('btn-nudge').classList.toggle('active');
+            nudgeControls.style.display = state.isNudgeOpen ? 'grid' : 'none';
+            if(state.isNudgeOpen && !state.isLocked) toggleLock(); 
         }
 
         function nudge(dx, dy) {
@@ -676,41 +752,21 @@
         function toggleTorch() {
             if (!state.track) return;
             const caps = state.track.getCapabilities();
-            if (!caps.torch) return showToast("No Torch Found");
+            if (!caps.torch) return showToast("No Torch");
             state.isTorchOn = !state.isTorchOn;
-            state.track.applyConstraints({ advanced: [{ torch: state.isTorchOn }] })
-                .then(() => document.getElementById('btn-torch').classList.toggle('active', state.isTorchOn))
-                .catch(e => showToast("Torch Failed"));
-        }
-
-        function cycleFilters() {
-            state.filterMode = (state.filterMode + 1) % FILTERS.length;
-            const cur = FILTERS[state.filterMode];
-            userImage.style.filter = cur.val;
-            document.getElementById('filter-label').innerText = cur.name;
-            document.getElementById('btn-filter').classList.toggle('active', state.filterMode > 0);
-            triggerSave();
-            showToast(`Filter: ${cur.name}`);
+            state.track.applyConstraints({ advanced: [{ torch: state.isTorchOn }] });
+            document.getElementById('btn-torch').classList.toggle('active');
         }
 
         function toggleFlip() {
             state.isFlipped = !state.isFlipped;
-            document.getElementById('btn-flip').classList.toggle('active', state.isFlipped);
+            document.getElementById('btn-flip').classList.toggle('active');
             updateTransform(); triggerSave();
             showToast(state.isFlipped ? "Mirrored" : "Normal");
         }
 
-        function toggleGrid() {
-            state.isGridOn = !state.isGridOn;
-            document.getElementById('grid-layer').style.display = state.isGridOn ? 'block' : 'none';
-            document.getElementById('btn-grid').classList.toggle('active', state.isGridOn);
-        }
-
-        // --- GESTURE ENGINE ---
-        let startX=0, startY=0;
-        let initialImgX=0, initialImgY=0;
-        let initialScale=1, initialRotate=0, initialDist=0, initialAngle=0;
-        let lastTap=0;
+        // --- GESTURES ---
+        let startX=0, startY=0, initX=0, initY=0, initScale=1, initRot=0, initDist=0, initAng=0, lastTap=0;
 
         function updateTransform() {
             if (!state.hasImage) return;
@@ -722,44 +778,44 @@
         function getAng(t) { return Math.atan2(t[1].clientY - t[0].clientY, t[1].clientX - t[0].clientX) * 180 / Math.PI; }
 
         gestureLayer.addEventListener('touchstart', (e) => {
-            const now = new Date().getTime();
+            if (state.isTrackingSetup) {
+                startTracking(e.touches[0].clientX, e.touches[0].clientY);
+                return;
+            }
+
+            const now = Date.now();
             if (now - lastTap < 300) { 
-                state.imgX = 0; state.imgY = 0; state.imgScale = 1; state.imgRotate = 0;
-                updateTransform(); triggerSave(); showToast("Reset"); 
+                state.imgX=0; state.imgY=0; state.imgScale=1; state.imgRotate=0;
+                updateTransform(); showToast("Reset");
             }
             lastTap = now;
 
             if (e.touches.length === 1) {
                 startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-                initialImgX = state.imgX; initialImgY = state.imgY;
+                initX = state.imgX; initY = state.imgY;
             } else if (e.touches.length === 2) {
-                initialDist = getDist(e.touches); initialAngle = getAng(e.touches);
-                initialScale = state.imgScale; initialRotate = state.imgRotate;
+                initDist = getDist(e.touches); initAng = getAng(e.touches);
+                initScale = state.imgScale; initRot = state.imgRotate;
             }
         });
 
         gestureLayer.addEventListener('touchmove', (e) => {
-            if (state.isLocked) return;
+            if (state.isLocked || state.isTrackingSetup) return;
             e.preventDefault();
             if (e.touches.length === 1) {
-                state.imgX = initialImgX + (e.touches[0].clientX - startX);
-                state.imgY = initialImgY + (e.touches[0].clientY - startY);
+                state.imgX = initX + (e.touches[0].clientX - startX);
+                state.imgY = initY + (e.touches[0].clientY - startY);
             } else if (e.touches.length === 2) {
                 const dist = getDist(e.touches);
                 const ang = getAng(e.touches);
-                state.imgScale = initialScale * (dist / initialDist);
-                state.imgRotate = initialRotate + (ang - initialAngle);
+                state.imgScale = initScale * (dist / initDist);
+                state.imgRotate = initRot + (ang - initAng);
             }
             requestAnimationFrame(updateTransform);
         });
-        
         gestureLayer.addEventListener('touchend', triggerSave);
 
         window.onload = initCamera;
-
-        const s = document.createElement('style');
-        s.innerHTML = `@keyframes spin { 100% { transform: rotate(360deg); } }`;
-        document.head.appendChild(s);
 
     </script>
 </body>
